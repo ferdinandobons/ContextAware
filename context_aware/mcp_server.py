@@ -9,6 +9,7 @@ from .store.sqlite_store import SQLiteContextStore
 from .router.graph_router import GraphRouter
 from .compiler.simple_compiler import SimpleCompiler
 from .analyzer.ts_analyzer import TreeSitterAnalyzer
+from .services.embedding_service import EmbeddingService
 
 # Initialize server
 server = Server("context-aware")
@@ -26,7 +27,8 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query keywords"},
-                    "type": {"type": "string", "enum": ["class", "function", "file"], "description": "Filter by item type"}
+                    "type": {"type": "string", "enum": ["class", "function", "file"], "description": "Filter by item type"},
+                    "semantic": {"type": "boolean", "description": "Enable semantic hybrid search (slower but finds concepts)"}
                 },
                 "required": ["query"]
             }
@@ -67,7 +69,12 @@ async def call_tool(name: str, arguments: Any) -> list[types.TextContent | types
         router = GraphRouter(store)
         compiler = SimpleCompiler()
         
-        items = router.route(query, type_filter=type_filter)
+        query_embedding = None
+        if arguments.get("semantic"):
+            service = EmbeddingService.get_instance()
+            query_embedding = service.generate_embedding(query)
+            
+        items = router.route(query, type_filter=type_filter, query_embedding=query_embedding)
         if items:
             text = compiler.compile_search_results(items)
         else:

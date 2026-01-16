@@ -6,10 +6,16 @@ class GraphRouter:
     def __init__(self, store: SQLiteContextStore):
         self.store = store
 
-    def route(self, query: str, type_filter: str = None, depth: int = 1) -> List[ContextItem]:
+    def route(self, query: str, type_filter: str = None, depth: int = 1, query_embedding: List[float] = None) -> List[ContextItem]:
         with self.store:
-            # 1. Initial Search (using SQLite FTS)
-            initial_hits = self.store.query(query, type_filter=type_filter)
+            # 1. Initial Search (Hybrid or FTS)
+            if query_embedding:
+                 initial_hits = self.store.search_hybrid(query, query_embedding=query_embedding)
+                 # Filter by type if needed (search_hybrid doesn't filter internally yet)
+                 if type_filter:
+                     initial_hits = [i for i in initial_hits if i.metadata.get("type") == type_filter]
+            else:
+                 initial_hits = self.store.query(query, type_filter=type_filter)
             
             # If FTS returns nothing, fallback to token scoring? 
             # Actually our SQLite FTS is robust for keywords.

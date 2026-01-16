@@ -9,6 +9,7 @@ from ..linker.graph_linker import GraphLinker
 from ..exporters.mermaid_exporter import MermaidExporter
 from ..server.simple_server import start_server
 from ..mcp_server import start_mcp
+from ..services.embedding_service import EmbeddingService
 from tqdm import tqdm
 
 def main():
@@ -23,12 +24,14 @@ def main():
     index_parser = subparsers.add_parser("index", help="Index the current project or a file")
     index_parser.add_argument("path", help="Path to file or directory to index")
     index_parser.add_argument("--re-index", action="store_true", help="Force re-indexing if index already exists")
+    index_parser.add_argument("--semantic", action="store_true", help="Generate embeddings for semantic search (slower)")
 
     # search command
     search_parser = subparsers.add_parser("search", help="Search the context")
     search_parser.add_argument("text", help="Search text")
     search_parser.add_argument("--type", choices=["class", "function", "file"], help="Filter by item type")
     search_parser.add_argument("--output", help="Output file path (optional)")
+    search_parser.add_argument("--semantic", action="store_true", help="Use hybrid semantic search")
     
     # read command
     read_parser = subparsers.add_parser("read", help="Read specific item content (Full Mode)")
@@ -125,6 +128,26 @@ def main():
                 store.update_file_status(full_path, os.path.getmtime(full_path))
         
         if items:
+            # Semantic Indexing
+            if args.semantic:
+                print("Generating embeddings for semantic search...")
+                embedding_service = EmbeddingService.get_instance()
+                
+                # Prepare text for embedding: Name + Docstring + snippet?
+                # For now just use item.content which contains signature + docstring usually.
+                # Or construct a representation.
+                batch_texts = []
+                for item in items:
+                     # Content usually has "Function foo... Docstring..."
+                     batch_texts.append(item.content)
+                
+                # Generate in one batch (or chunk if huge)
+                # Showing progress for embeddings since it's slow
+                embeddings = embedding_service.generate_embeddings(batch_texts)
+                for i, item in enumerate(items):
+                    if i < len(embeddings):
+                        item.embedding = embeddings[i]
+
             store.save(items)
             print(f"Indexed {len(items)} new/modified items.")
             
@@ -144,8 +167,15 @@ def main():
         compiler = SimpleCompiler()
         
         print(f"Searching for: '{args.text}' (Type: {args.type})")
+        
+        query_embedding = None
+        if args.semantic:
+             print("Computing query embedding...")
+             service = EmbeddingService.get_instance()
+             query_embedding = service.generate_embedding(args.text)
+        
         # Enforce Skeleton Mode for Search
-        items = router.route(args.text, type_filter=args.type)
+        items = router.route(args.text, type_filter=args.type, query_embedding=query_embedding)
         print(f"Found {len(items)} items.")
         
         if items:

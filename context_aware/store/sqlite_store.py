@@ -34,9 +34,16 @@ class SQLiteContextStore:
                 metadata TEXT,
                 source_file TEXT,
                 line_number INTEGER,
-                score REAL DEFAULT 0
+                score REAL DEFAULT 0,
+                embedding BLOB
             )
         ''')
+        
+        # Migration: Check if embedding column exists
+        cursor.execute("PRAGMA table_info(items)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if "embedding" not in columns:
+            cursor.execute("ALTER TABLE items ADD COLUMN embedding BLOB")
         
         # Edges table for relational graph
         # target_key: the raw string import (e.g. "products.inventory.InventoryService")
@@ -97,14 +104,24 @@ class SQLiteContextStore:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        import numpy as np
+        
         for item in items:
             meta_json = json.dumps(item.metadata)
             
+            # Serialize embedding if present
+            embedding_blob = None
+            if item.embedding:
+                # Convert list[float] to numpy array then to bytes
+                # We assume float32 for space efficiency
+                arr = np.array(item.embedding, dtype=np.float32)
+                embedding_blob = arr.tobytes()
+            
             # Upsert into main table
             cursor.execute('''
-                INSERT OR REPLACE INTO items (id, layer, content, metadata, source_file, line_number, score)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (item.id, item.layer.value, item.content, meta_json, item.source_file, item.line_number, 0.0))
+                INSERT OR REPLACE INTO items (id, layer, content, metadata, source_file, line_number, score, embedding)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (item.id, item.layer.value, item.content, meta_json, item.source_file, item.line_number, 0.0, embedding_blob))
             
             # Update FTS index (delete old if exists, then insert)
             cursor.execute('DELETE FROM items_fts WHERE id = ?', (item.id,))
@@ -137,6 +154,125 @@ class SQLiteContextStore:
         rows = cursor.fetchall()
         conn.close()
         return [self._row_to_item(row) for row in rows]
+
+    def search_hybrid(self, query_text: str, query_embedding: Optional[List[float]] = None, limit: int = 50, alpha: float = 0.5) -> List[ContextItem]:
+        """
+        Performs a hybrid search combining FTS BM25 scores with Cosine Similarity.
+        alpha: Weight for Vector Score (0.0 - 1.0). 1.0 = Pure Vector, 0.0 = Pure Keyword.
+        """
+        import numpy as np
+        
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # 1. FTS Search to get candidate set and BM25 scores
+        clean_query = query_text.replace('"', '""')
+        
+        # We use a custom query to get rank
+        # fts5 returns rank (lower is better usually? No, fts5 bm25 is negative log prob? 
+        # Actually fts5 'bm25' func returns a score where smaller is better (more negative).
+        # But 'rank' column usually needs configuring. 
+        # Let's use standard MATCH and assume reliable ordering.
+        # But wait, we need normalized scores to combine.
+        
+        # Simplified: Get top N keyword results
+        fts_candidates = {}
+        try:
+             cursor.execute('''
+                SELECT id, rank FROM items_fts WHERE items_fts MATCH ? ORDER BY rank LIMIT 100
+             ''', (clean_query,))
+             for row in cursor.fetchall():
+                 # FTS rank is usually smaller = better. Invert it roughly for mixing.
+                 # Let's just store the rank and normalize later
+                 fts_candidates[row[0]] = row[1] 
+        except sqlite3.OperationalError:
+             pass # FTS failed
+        
+        # 2. Vector Search (Brute force over all items with embeddings)
+        # In a real system, we'd filter by layer or use an index.
+        # For small codebases (<10k items), numpy brute force is fine (<50ms).
+        
+        vector_scores = {}
+        if query_embedding:
+            cursor.execute('SELECT id, embedding FROM items WHERE embedding IS NOT NULL')
+            rows = cursor.fetchall()
+            
+            if rows:
+                ids = []
+                vectors = []
+                for r_id, r_blob in rows:
+                    ids.append(r_id)
+                    vectors.append(np.frombuffer(r_blob, dtype=np.float32))
+                
+                if vectors:
+                    matrix = np.vstack(vectors) # (N, D)
+                    q_vec = np.array(query_embedding, dtype=np.float32) # (D,)
+                    
+                    # Cosine Similarity: (A . B) / (|A| |B|)
+                    # Assume vectors are normalized? If not, normalize.
+                    norm_matrix = np.linalg.norm(matrix, axis=1)
+                    norm_q = np.linalg.norm(q_vec)
+                    
+                    if norm_q > 0:
+                         # dot product
+                         scores = np.dot(matrix, q_vec) / (norm_matrix * norm_q)
+                         # Map to Dictionary
+                         for i, score in enumerate(scores):
+                             vector_scores[ids[i]] = float(score)
+
+        # 3. Combine Scores
+        # We need the union of keys
+        all_ids = set(fts_candidates.keys()) | set(vector_scores.keys())
+        final_scores = []
+        
+        for item_id in all_ids:
+            # Normalize FTS rank
+            # FTS rank: closer to 0 is better (usually negative or small positive).
+            # Let's treat FTS presence as a strong signal.
+            # Very heuristic: 
+            fts_score = 0.0
+            if item_id in fts_candidates:
+                raw_rank = fts_candidates[item_id]
+                # Invert rank: 1 / (1 + rank) ? Rank can be negative.
+                # Let's just assign a fixed high score for being in top 100 FTS results 
+                # scaled by position?
+                # Simpler: If in FTS, score 1.0. If not, 0.0. 
+                # This equals "Boost Semantic results that also match Keywords"
+                fts_score = 1.0 
+            
+            vec_score = vector_scores.get(item_id, 0.0)
+            
+            # Simple weighted average
+            # If we don't have embeddings, alpha should be effectively 0
+            effective_alpha = alpha if query_embedding else 0.0
+            
+            # Hybrid Score
+            # If effective_alpha is 0.5: 50% keyword presence, 50% semantic similarity
+            score = ((1 - effective_alpha) * fts_score) + (effective_alpha * vec_score)
+            
+            final_scores.append((item_id, score))
+            
+        final_scores.sort(key=lambda x: x[1], reverse=True)
+        top_ids = [x[0] for x in final_scores[:limit]]
+        
+        # 4. Fetch full items
+        results = []
+        if top_ids:
+            placeholders = ','.join(['?'] * len(top_ids))
+            # Preserve order? Python list is ordered, SQL IN is not.
+            cursor.execute(f'SELECT * FROM items WHERE id IN ({placeholders})', top_ids)
+            rows = cursor.fetchall()
+            row_map = {row[0]: row for row in rows}
+            
+            for item_id in top_ids:
+                if item_id in row_map:
+                    results.append(self._row_to_item(row_map[item_id]))
+                    
+        if use_own_conn:
+            conn.close()
+            
+        return results
 
     def query(self, query_text: str, type_filter: Optional[str] = None) -> List[ContextItem]:
         use_own_conn = self._conn is None

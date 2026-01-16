@@ -13,3 +13,4 @@ class ContextItem(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     source_file: Optional[str] = None
     line_number: Optional[int] = None
+    embedding: Optional[list[float]] = None

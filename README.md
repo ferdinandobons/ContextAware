@@ -89,6 +89,8 @@ context_aware init
 Parses Python files, extracts AST nodes (classes, functions, imports), and updates the graph.
 ```bash
 context_aware index ./src
+# Optional: Generate embeddings for semantic search (slower)
+context_aware index ./src --semantic
 ```
 
 ### `search <query>`
@@ -99,6 +101,7 @@ context_aware search "order processing"
 Options:
 - `--type <class|function|file>`: Filter results.
 - `--output <file>`: Save results to a file.
+- `--semantic`: Enable Hybrid Semantic Search (combines keywords + embeddings). Requires `sentence-transformers`.
 
 ### `read <id>`
 Read the full source code of a specific item found during search.
