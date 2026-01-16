@@ -136,7 +136,3 @@ context_aware read "class:orders/processor.py:OrderProcessor"
 *   **Router**: `GraphRouter` performs graph traversal on the metadata.
 *   **Retriever**: **On-Demand AST Parsing**. When you request code (`read`), the system reads the file from disk *at that moment* and extracts the function body. This ensures **zero stale data**—you always get the current code.
 *   **Compiler**: Converts nodes into XML prompts (`<item>`, `<dependencies>`) for the LLM.
-
-## ⚠️ Limitations
-*   **Language Support**: Currently optimized for **Python** only.
-*   **Semantic Understanding**: Relies on keyword/symbol matching + FTS. Does not yet use Vector Embeddings (planned for v0.5).
