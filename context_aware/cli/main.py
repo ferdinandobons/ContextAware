@@ -19,16 +19,17 @@ def main():
     # index command
     index_parser = subparsers.add_parser("index", help="Index the current project or a file")
     index_parser.add_argument("path", help="Path to file or directory to index")
+    index_parser.add_argument("--re-index", action="store_true", help="Force re-indexing if index already exists")
 
-    # query command
-    query_parser = subparsers.add_parser("query", help="Query the context")
-    query_parser.add_argument("text", help="Query text")
-    query_parser.add_argument("--mode", choices=["full", "skeleton"], default="full", help="Output mode")
-    query_parser.add_argument("--type", choices=["class", "function", "file"], help="Filter by item type")
+    # search command (formerly query)
+    search_parser = subparsers.add_parser("search", help="Search the context (Skeleton Mode)")
+    search_parser.add_argument("text", help="Search text")
+    search_parser.add_argument("--type", choices=["class", "function", "file"], help="Filter by item type")
+    search_parser.add_argument("--output", help="Output file path (optional)")
     
-    # retrieve command
-    retrieve_parser = subparsers.add_parser("retrieve", help="Retrieve specific item by ID")
-    retrieve_parser.add_argument("id", help="Exact ID of the context item")
+    # read command (formerly retrieve)
+    read_parser = subparsers.add_parser("read", help="Read specific item content (Full Mode)")
+    read_parser.add_argument("id", help="Exact ID of the context item")
     
     args = parser.parse_args()
     
@@ -39,6 +40,11 @@ def main():
         print(f"Initialized ContextAware store at {store.db_path}")
         
     elif args.command == "index":
+        if store.has_index() and not args.re_index:
+            print(f"Index already exists at {store.db_path}.")
+            print("Use --re-index to overwrite.")
+            sys.exit(0)
+            
         analyzer = PythonAnalyzer()
         target_path = os.path.abspath(args.path)
         print(f"Indexing {target_path}...")
@@ -62,32 +68,35 @@ def main():
         else:
             print("No items found to index.")
         
-    elif args.command == "query":
+    elif args.command == "search":
         router = GraphRouter(store)
         compiler = SimpleCompiler()
         
-        print(f"Querying for: '{args.text}' (Mode: {args.mode}, Type: {args.type})")
+        print(f"Searching for: '{args.text}' (Type: {args.type})")
+        # Enforce Skeleton Mode for Search
         items = router.route(args.text, type_filter=args.type)
         print(f"Found {len(items)} items.")
         
         if items:
-            prompt = compiler.compile(items, mode=args.mode)
-            print("\n--- Compiled Context ---\n")
-            print(prompt)
-            print("\n------------------------\n")
+            prompt = compiler.compile(items, mode="skeleton")
             
-    elif args.command == "retrieve":
+            if args.output:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    f.write(prompt)
+                print(f"\nContext saved to {args.output}")
+            else:
+                print("\n--- Compiled Context (Skeleton) ---\n")
+                print(prompt)
+                print("\n-----------------------------------\n")
+            
+    elif args.command == "read":
         # Direct DB lookup to get file path and symbol name
         item = store.get_by_id(args.id)
         
         if item:
-            print(f"Retrieved item: {item.id}")
+            print(f"Reading item: {item.id}")
             
             # Hybrid AST Lookup: Fetch fresh code from disk
-            # We need to construct the absolute path if it's relative
-            # item.source_file comes from the machine that indexed it. 
-            # If we are running on the same machine/mount, it works.
-            
             analyzer = PythonAnalyzer()
             symbol_name = item.metadata.get("name")
             
@@ -115,10 +124,11 @@ def main():
             )
             
             compiler = SimpleCompiler()
+            # Enforce Full Mode for Read
             prompt = compiler.compile([fresh_item], mode="full")
-            print("\n--- Context Item ---\n")
+            print("\n--- Item Content (Full) ---\n")
             print(prompt)
-            print("\n--------------------\n")
+            print("\n---------------------------\n")
         else:
             print(f"Item not found: {args.id}")
         

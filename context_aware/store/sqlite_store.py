@@ -49,6 +49,23 @@ class SQLiteContextStore:
         conn.commit()
         conn.close()
 
+    def has_index(self) -> bool:
+        """Checks if the index already contains items."""
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT 1 FROM items LIMIT 1')
+            result = cursor.fetchone()
+        except sqlite3.OperationalError:
+            result = None
+            
+        if use_own_conn:
+            conn.close()
+            
+        return result is not None
+
     def save(self, items: List[ContextItem]):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()

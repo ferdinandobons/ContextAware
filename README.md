@@ -81,18 +81,19 @@ Parses Python files, extracts AST nodes (classes, functions, imports), and updat
 context_aware index ./src
 ```
 
-### `query <text>`
- Semantic fuzzy search on the graph.
-*   `--mode=skeleton` (**Recommended**): Returns signatures + dependencies.
-*   `--mode=full`: Returns full source code.
+### 3. Search (Skeleton Mode)
+Search for relevant code. Returns a "skeleton" view (signatures + docstrings + dependencies) to keep context light.
 ```bash
-context_aware query "payment processing" --mode=skeleton
+context_aware search "order processing"
 ```
+Options:
+- `--type <class|function|file>`: Filter results.
+- `--output <file>`: Save results to a file.
 
-### `retrieve <id>`
-Fetches a specific item by its unique ID (found in previous query results).
+### 4. Read (Full Mode)
+Read the full source code of a specific item found during search.
 ```bash
-context_aware retrieve "class:payments.py:PaymentGateway"
+context_aware read "class:orders/processor.py:OrderProcessor"
 ```
 
 ### Global Options
