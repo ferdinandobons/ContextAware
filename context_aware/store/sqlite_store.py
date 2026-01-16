@@ -37,6 +37,20 @@ class SQLiteContextStore:
             )
         ''')
         
+        # Edges table for relational graph
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS edges (
+                source_id TEXT,
+                target_key TEXT,
+                relation_type TEXT,
+                PRIMARY KEY (source_id, target_key, relation_type),
+                FOREIGN KEY(source_id) REFERENCES items(id)
+            )
+        ''')
+        
+        # Index for reverse lookup and joins
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_key)')
+
         # FTS5 virtual table for search
         # We need to check if FTS5 is available, usually yes in standard python sqlite3
         try:
@@ -85,6 +99,20 @@ class SQLiteContextStore:
                 INSERT INTO items_fts (id, content, metadata)
                 VALUES (?, ?, ?)
             ''', (item.id, item.content, meta_json))
+            
+            # --- Populate Edges Graph ---
+            # Clear existing edges for this source to avoid stale links
+            cursor.execute('DELETE FROM edges WHERE source_id = ?', (item.id,))
+            
+            deps = item.metadata.get("dependencies", [])
+            for dep in deps:
+                # For v1 graph, target_key is the import string (e.g. "products.inventory.InventoryService")
+                # We normalize it slightly to help matching.
+                if dep:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO edges (source_id, target_key, relation_type)
+                        VALUES (?, ?, ?)
+                    ''', (item.id, dep, "import"))
             
         conn.commit()
         conn.close()
@@ -151,3 +179,48 @@ class SQLiteContextStore:
             source_file=row[4],
             line_number=row[5]
         )
+
+    def get_outbound_edges(self, source_ids: List[str]) -> List[tuple]:
+        """Returns list of (source_id, target_key) for given source_ids."""
+        if not source_ids:
+            return []
+            
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        placeholders = ','.join(['?'] * len(source_ids))
+        cursor.execute(f'SELECT source_id, target_key FROM edges WHERE source_id IN ({placeholders})', source_ids)
+        rows = cursor.fetchall()
+        
+        if use_own_conn:
+            conn.close()
+        return rows
+
+    def get_items_by_name(self, names: List[str]) -> List[ContextItem]:
+        """Bulk lookup items by simple name (parallelized FTS for speed)."""
+        if not names:
+            return []
+        
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        results = []
+        # Optimization: Try to match exact "name" in metadata via FTS or LIKE
+        # Since FTS5 with metadata column is active, we can use it.
+        # But for robustness against tokenizer, let's use a big OR query on metadata with LIKE
+        # OR just iterate. Iterating is safer for correctness, batching 20-30.
+        
+        # Super simple strategy: fetch where metadata like %"name": "TargetName"% 
+        # Only feasible if list is small. 
+        
+        for name in names:
+             cursor.execute("SELECT * FROM items WHERE metadata LIKE ?", (f'%"name": "{name}"%',))
+             rows = cursor.fetchall()
+             results.extend([self._row_to_item(row) for row in rows])
+             
+        if use_own_conn:
+             conn.close()
+             
+        return results

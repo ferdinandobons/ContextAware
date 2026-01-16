@@ -22,39 +22,44 @@ class GraphRouter:
             final_items = {item.id: item for item in initial_hits}
             processed_ids = set(final_items.keys())
             
-            # 2. Graph Traversal
-            current_layer = list(initial_hits)
+            # 2. Graph Traversal (Bulk Optimized)
+            current_layer_ids = [item.id for item in initial_hits]
             
             for _ in range(depth):
-                next_layer = []
-                for item in current_layer:
-                    deps = item.metadata.get("dependencies", [])
-                    for dep_str in deps:
-                        # Resolve dependency.
-                        # dep_str could be "products.inventory.InventoryService" or "datetime"
-                        # We look for items with name matching the last part.
-                        
-                        target_name = dep_str.split('.')[-1]
-                        
-                        # We can't query by ID directly as we don't know the file path.
-                        # We query content/metadata for the name.
-                        # For performance, we'd want a specific lookup, but querying FTS for the name works for now.
-                        
-                        # Optimization: Use a specialized query or load all and filter (bad for scale).
-                        # Better: SQLite query by metadata field if we extracted it, but it's JSON.
-                        # We can use the FTS index which includes metadata.
-                        
-                        candidates = self.store.query(target_name)
-                        
-                        for cand in candidates:
-                             # Strict check: make sure the candidate's name actually matches target_name
-                             # to avoid "Service" matching "AuthService" fuzzy.
-                             if cand.metadata.get("name") == target_name:
-                                 if cand.id not in processed_ids:
-                                     processed_ids.add(cand.id)
-                                     final_items[cand.id] = cand
-                                     next_layer.append(cand)
+                if not current_layer_ids:
+                    break
+                    
+                # A. Bulk fetch edges from DB
+                edges = self.store.get_outbound_edges(current_layer_ids)
+                if not edges:
+                    break
+                    
+                # B. Extract potential target names
+                # edge is (source_id, target_key)
+                # target_key might be "products.inventory.InventoryService"
+                target_names = set()
+                for _, target_key in edges:
+                    if target_key:
+                        name = target_key.split('.')[-1]
+                        target_names.add(name)
                 
-                current_layer = next_layer
+                if not target_names:
+                    break
+                    
+                # C. Bulk resolve items by name
+                resolved_items = self.store.get_items_by_name(list(target_names))
+                
+                next_layer_ids = []
+                for item in resolved_items:
+                    # Strict validation: Only accept if the name matches the target_key tail
+                    # (Simple heuristic for now, robust enough for v0.2)
+                    if item.id not in processed_ids:
+                        processed_ids.add(item.id)
+                        final_items[item.id] = item
+                        next_layer_ids.append(item.id)
+                
+                current_layer_ids = next_layer_ids
+            
+            return list(final_items.values())
             
             return list(final_items.values())
