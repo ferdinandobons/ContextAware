@@ -8,6 +8,7 @@ Standard RAG (Retrieval-Augmented Generation) is often too imprecise for coding 
 
 **ContextAware solves this by treating your code as a Navigable Graph.**
 *   **Token Efficiency**: Reduces exploration costs by 90% via "Skeleton Mode".
+*   **Contextual Understanding**: LLMs often need to read dozens of files just to understand the project structure and locate relevant code. ContextAware replaces this with a structured map.
 *   **Zero Hallucinations**: Provides explicit dependency chains (Import Graph).
 *   **Scalable**: Built on SQLite + AST Analysis, works on projects of any size.
 *   **Agent-Ready**: Returns structured XML optimized for LLM consumption.
@@ -107,13 +108,13 @@ context_aware read "class:orders/processor.py:OrderProcessor"
 
 1.  **Agent asks**: Where are discounts handled?
     ```bash
-    context_aware query "discount calculation" --mode=skeleton
+    context_aware search "discount calculation"
     ```
     *Output*: Found `class:PricingService` in `pricing.py`. It uses `UserTierService`.
 
 2.  **Agent analyzes**: I see `PricingService.calculate_discount`. I need to see the code.
     ```bash
-    context_aware retrieve "class:pricing.py:PricingService"
+    context_aware read "class:pricing.py:PricingService"
     ```
     *Output*: Full Python code of the class.
 
