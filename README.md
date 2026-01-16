@@ -49,7 +49,7 @@ Once you pinpoint the exact function/class to modify or debug, fetch its full so
 
 ---
 
-## � Installation & Setup
+## 📦 Installation & Setup
 
 1.  **Install via pip**:
     ```bash
@@ -90,7 +90,7 @@ Parses Python files, extracts AST nodes (classes, functions, imports), and updat
 context_aware index ./src
 ```
 
-### 3. Search
+### `search <query>`
 Search for relevant code context. Returns signatures, docstrings, and dependencies.
 ```bash
 context_aware search "order processing"
@@ -99,11 +99,24 @@ Options:
 - `--type <class|function|file>`: Filter results.
 - `--output <file>`: Save results to a file.
 
-### 4. Read
+### `read <id>`
 Read the full source code of a specific item found during search.
 ```bash
 context_aware read "class:orders/processor.py:OrderProcessor"
 ```
+
+### `impacts <id>`
+Analyze what depends on a specific item (Reverse Lookup).
+```bash
+context_aware impacts "class:user.py:User"
+```
+
+### `graph`
+Export the dependency graph to Mermaid format.
+```bash
+context_aware graph --output architecture.mmd
+```
+
 
 ### Global Options
 *   `--root <path>`: Specify the root directory of the project (where `.context_aware` lives). Essential when working on projects outside the current working directory.
@@ -136,7 +149,7 @@ context_aware read "class:orders/processor.py:OrderProcessor"
 
 ---
 
-## 🏗 Architecture (v0.2.2 - Hybrid Lookup)
+## 🏗 Architecture
 
 *   **Analyzer**: `PythonAnalyzer` extracts symbols and dependencies but **stores only metadata** (pointers) in the DB to keep it light.
 *   **Store**: `SQLiteContextStore` with FTS5 for fast fuzzy search of docstrings and names.
