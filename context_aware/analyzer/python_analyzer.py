@@ -32,7 +32,7 @@ class PythonAnalyzer(BaseAnalyzer):
         ))
         
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 items.append(self._create_item(node, file_path, "function", imports))
             elif isinstance(node, ast.ClassDef):
                 items.append(self._create_item(node, file_path, "class", imports))
@@ -87,7 +87,7 @@ class PythonAnalyzer(BaseAnalyzer):
             source_lines = content.splitlines()
             
             for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     if node.name == symbol_name:
                          if hasattr(node, 'lineno') and hasattr(node, 'end_lineno'):
                             return "\n".join(source_lines[node.lineno-1 : node.end_lineno])

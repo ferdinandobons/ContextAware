@@ -51,19 +51,22 @@ class JavascriptAnalyzer(BaseAnalyzer):
             ))
 
         # 3. Functions (function foo() or const foo = () =>)
-        # function foo(...)
-        func_pattern = re.compile(r'function\s+(\w+)')
+        # Matches: function foo(...) OR const|let|var foo = ... =>
+        func_pattern = re.compile(r'(?:function\s+(\w+))|(?:(const|let|var)\s+(\w+)\s*=\s*.*=>)')
         for match in func_pattern.finditer(content):
-            func_name = match.group(1)
-            line_num = content[:match.start()].count('\n') + 1
-            items.append(ContextItem(
-                id=f"function:{relative_path}:{func_name}",
-                layer=ContextLayer.SEMANTIC,
-                content=f"function {func_name}",
-                metadata={"type": "function", "name": func_name, "dependencies": []},
-                source_file=file_path,
-                line_number=line_num
-            ))
+            # group(1) for 'function foo', group(3) for 'const foo ='
+            func_name = match.group(1) or match.group(3)
+            
+            if func_name:
+                line_num = content[:match.start()].count('\n') + 1
+                items.append(ContextItem(
+                    id=f"function:{relative_path}:{func_name}",
+                    layer=ContextLayer.SEMANTIC,
+                    content=f"function {func_name}",
+                    metadata={"type": "function", "name": func_name, "dependencies": []},
+                    source_file=file_path,
+                    line_number=line_num
+                ))
             
         return items
 
