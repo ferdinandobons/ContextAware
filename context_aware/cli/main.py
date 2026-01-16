@@ -2,15 +2,13 @@ import argparse
 import os
 import sys
 from ..store.sqlite_store import SQLiteContextStore
-from ..analyzer.python_analyzer import PythonAnalyzer
-from ..analyzer.javascript_analyzer import JavascriptAnalyzer
-from ..analyzer.go_analyzer import GoAnalyzer
+from ..analyzer.ts_analyzer import TreeSitterAnalyzer
 from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
 from ..linker.graph_linker import GraphLinker
-from ..linker.graph_linker import GraphLinker
 from ..exporters.mermaid_exporter import MermaidExporter
 from ..server.simple_server import start_server
+from ..mcp_server import start_mcp
 from tqdm import tqdm
 
 def main():
@@ -44,9 +42,15 @@ def main():
     graph_parser = subparsers.add_parser("graph", help="Export dependency graph to Mermaid format")
     graph_parser.add_argument("--output", help="Output file path (default: stdout)")
 
-    # serve command (Interactive UI)
-    serve_parser = subparsers.add_parser("serve", help="Start interactive context server")
-    serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    # ui command (formerly serve)
+    ui_parser = subparsers.add_parser("ui", help="Start interactive context visualization (HTTP)")
+    ui_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+
+    # serve command (MCP)
+    serve_parser = subparsers.add_parser("serve", help="Start MCP (Model Context Protocol) Server")
+    # MCP usually runs over stdio, but we can add args if needed.
+    # We could also keep 'mcp' as an alias.
+    mcp_parser = subparsers.add_parser("mcp", help="Alias for serve")
 
     
     args = parser.parse_args()
@@ -60,9 +64,11 @@ def main():
     elif args.command == "index":
         # Note: we removed the "Index already exists" check to allow incremental updates.
             
-        analyzer_py = PythonAnalyzer()
-        analyzer_js = JavascriptAnalyzer()
-        analyzer_go = GoAnalyzer()
+        # Using TreeSitter for all languages
+        analyzer_py = TreeSitterAnalyzer("python")
+        analyzer_js = TreeSitterAnalyzer("javascript")
+        analyzer_ts = TreeSitterAnalyzer("typescript")
+        analyzer_go = TreeSitterAnalyzer("go")
         target_path = os.path.abspath(args.path)
         print(f"Indexing {target_path}...")
         
@@ -106,8 +112,10 @@ def main():
             current_items = []
             if full_path.endswith(".py"):
                 current_items = analyzer_py.analyze_file(full_path)
-            elif full_path.endswith(".js") or full_path.endswith(".ts"):
+            elif full_path.endswith(".js"):
                 current_items = analyzer_js.analyze_file(full_path)
+            elif full_path.endswith(".ts") or full_path.endswith(".tsx"):
+                current_items = analyzer_ts.analyze_file(full_path)
             elif full_path.endswith(".go"):
                 current_items = analyzer_go.analyze_file(full_path)
             
@@ -160,19 +168,36 @@ def main():
             print(f"Reading item: {item.id}")
             
             # Hybrid AST Lookup: Fetch fresh code from disk
-            analyzer = PythonAnalyzer()
-            symbol_name = item.metadata.get("name")
+            analyzer = None
+            if item.source_file.endswith(".py"):
+                analyzer = TreeSitterAnalyzer("python")
+            elif item.source_file.endswith(".js"):
+                analyzer = TreeSitterAnalyzer("javascript")
+            elif item.source_file.endswith((".ts", ".tsx")):
+                analyzer = TreeSitterAnalyzer("typescript")
+            elif item.source_file.endswith(".go"):
+                analyzer = TreeSitterAnalyzer("go")
+            
+            if analyzer:
+                symbol_name = item.metadata.get("name")
+            else:
+                # Fallback for unknown types or file types
+                symbol_name = None
             
             # Verify file exists
             if not os.path.exists(item.source_file):
                 print(f"Warning: Source file not found at {item.source_file}. Returning basic metadata.")
                 fresh_content = item.content
             else:
-                fresh_code = analyzer.extract_code_by_symbol(item.source_file, symbol_name)
+                fresh_code = None
+                if analyzer and symbol_name:
+                    fresh_code = analyzer.extract_code_by_symbol(item.source_file, symbol_name)
+                
                 if fresh_code:
                     fresh_content = fresh_code  # Update content with fresh code
                 else:
-                    print(f"Warning: Symbol '{symbol_name}' not found in file. Has it been renamed?")
+                    if analyzer:
+                        print(f"Warning: Symbol '{symbol_name}' not found in file. Has it been renamed?")
                     fresh_content = item.content
             
             # Create a temporary item with fresh content for compilation
@@ -220,8 +245,11 @@ def main():
         else:
             print(chart)
         
-    elif args.command == "serve":
+    elif args.command == "ui":
         start_server(store, port=args.port)
+        
+    elif args.command == "serve" or args.command == "mcp":
+        start_mcp(root_dir=args.root)
 
     else:
         parser.print_help()
