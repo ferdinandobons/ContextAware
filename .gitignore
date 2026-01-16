@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
 # Virtual Environments
 venv/
@@ -25,3 +26,4 @@ build/
 
 # Other
 demo_*
+test_*

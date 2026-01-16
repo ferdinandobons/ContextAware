@@ -13,16 +13,20 @@ class JavascriptAnalyzer(BaseAnalyzer):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-        except:
+        except (OSError, UnicodeDecodeError) as e:
+            # Silently fail for now, or log if we had a logger
             return []
 
         # 1. File Item
         relative_path = os.path.basename(file_path)
         
-        # Regex for import dependencies
-        # import X from '...' or import { X } from '...'
+        # Regex for ES6 import dependencies
         import_pattern = re.compile(r'import\s+.*?from\s+[\'"](.*?)[\'"]')
         deps = import_pattern.findall(content)
+        
+        # Regex for CommonJS require dependencies
+        require_pattern = re.compile(r'require\s*\(\s*[\'"](.*?)[\'"]\s*\)')
+        deps.extend(require_pattern.findall(content))
         
         items.append(ContextItem(
             id=f"file:{relative_path}",
@@ -51,19 +55,22 @@ class JavascriptAnalyzer(BaseAnalyzer):
             ))
 
         # 3. Functions (function foo() or const foo = () =>)
-        # function foo(...)
-        func_pattern = re.compile(r'function\s+(\w+)')
+        # Matches: function foo(...) OR const|let|var foo = ... =>
+        func_pattern = re.compile(r'(?:function\s+(\w+))|(?:(const|let|var)\s+(\w+)\s*=\s*.*=>)')
         for match in func_pattern.finditer(content):
-            func_name = match.group(1)
-            line_num = content[:match.start()].count('\n') + 1
-            items.append(ContextItem(
-                id=f"function:{relative_path}:{func_name}",
-                layer=ContextLayer.SEMANTIC,
-                content=f"function {func_name}",
-                metadata={"type": "function", "name": func_name, "dependencies": []},
-                source_file=file_path,
-                line_number=line_num
-            ))
+            # group(1) for 'function foo', group(3) for 'const foo ='
+            func_name = match.group(1) or match.group(3)
+            
+            if func_name:
+                line_num = content[:match.start()].count('\n') + 1
+                items.append(ContextItem(
+                    id=f"function:{relative_path}:{func_name}",
+                    layer=ContextLayer.SEMANTIC,
+                    content=f"function {func_name}",
+                    metadata={"type": "function", "name": func_name, "dependencies": []},
+                    source_file=file_path,
+                    line_number=line_num
+                ))
             
         return items
 
@@ -87,25 +94,57 @@ class JavascriptAnalyzer(BaseAnalyzer):
             if start_line == -1:
                 return None
                 
-            # Brace counting to find end of block
+            # Robust Brace counting with state machine
             cnt = 0
             found_start_brace = False
             extracted_lines = []
+            
+            in_quote = None # Can be ', ", or `
+            in_block_comment = False
             
             for i in range(start_line, len(lines)):
                 line = lines[i]
                 extracted_lines.append(line)
                 
-                open_braces = line.count('{')
-                close_braces = line.count('}')
+                j = 0
+                while j < len(line):
+                    char = line[j]
+                    
+                    if in_block_comment:
+                        if char == '*' and j + 1 < len(line) and line[j+1] == '/':
+                            in_block_comment = False
+                            j += 1 # Skip /
+                    elif in_quote:
+                        if char == '\\':
+                            j += 1 # Skip escaped char
+                        elif char == in_quote:
+                            in_quote = None
+                    else:
+                        # Check for comments start
+                        if char == '/' and j + 1 < len(line):
+                            if line[j+1] == '/':
+                                break # Skip rest of line (single line comment)
+                            elif line[j+1] == '*':
+                                in_block_comment = True
+                                j += 1 # Skip *
+                                j += 1 # Move to next char
+                                continue
+                        
+                        # Check for quotes
+                        if char in ('"', "'", '`'):
+                            in_quote = char
+                        
+                        # Check braces
+                        elif char == '{':
+                            found_start_brace = True
+                            cnt += 1
+                        elif char == '}':
+                            cnt -= 1
+                    
+                    j += 1
                 
-                if open_braces > 0:
-                    found_start_brace = True
-                
-                cnt += (open_braces - close_braces)
-                
+                # Check exit condition
                 if found_start_brace and cnt <= 0:
-                    # End of block reached
                     break
             
             return "".join(extracted_lines)

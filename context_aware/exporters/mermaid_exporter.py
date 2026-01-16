@@ -1,4 +1,3 @@
-from typing import List
 import sqlite3
 import json
 from ..store.sqlite_store import SQLiteContextStore
@@ -13,7 +12,6 @@ class MermaidExporter:
     def export(self) -> str:
         lines = ["graph TD"]
         
-        # Styles
         # Styles
         lines.append("classDef file fill:#e1f5fe,stroke:#01579b,stroke-width:2px")
         lines.append("")

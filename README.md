@@ -14,6 +14,13 @@ Standard RAG (Retrieval-Augmented Generation) is often too imprecise for coding 
 *   **Scalable**: Built on SQLite + Relational Graph, works on projects of any size.
 *   **Agent-Ready**: Returns structured XML optimized for LLM consumption.
 
+## 🌍 Supported Languages
+
+*   **Python**: Full support (Classes, Functions, Imports).
+*   **JavaScript**: ES6 Modules & CommonJS support.
+*   **TypeScript**: Basic support (Structure analysis).
+
+
 ---
 
 ## 🤖 Agent Protocol (How to use this tool)

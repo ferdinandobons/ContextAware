@@ -31,43 +31,48 @@ class GraphLinker:
         resolved_count = 0
         
         # 2. For each edge, try to find a matching item
-        # Optimization: We can load all item names into memory for O(1) lookup if items < 100k
-        # For now, let's stick to SQL lookups for safety, but optimize with LIKE
-        
-        # Improved Strategy:
-        # Instead of 1 query per edge, let's fetch all (name, id) from items first.
-        cursor.execute("SELECT id, metadata FROM items")
-        # We need to parse metadata to get the name. 
-        # Or... we can rely on the fact that ID often contains the name (e.g. class:file:Name)
-        # But let's trust metadata['name']
+        # Strategy: Fetch all (name, id, source_file) from items.
+        cursor.execute("SELECT id, metadata, source_file FROM items")
         
         import json
-        name_map = {} # "InventoryService" -> ["id1", "id2"]
+        name_map = {} # "InventoryService" -> [("id1", "path/to/file1"), ("id2", "path/to/file2")]
         
         for row in cursor.fetchall():
             item_id = row[0]
+            source_file = row[2] or ""
             try:
                 meta = json.loads(row[1])
                 name = meta.get("name")
                 if name:
                     if name not in name_map:
                         name_map[name] = []
-                    name_map[name].append(item_id)
+                    name_map[name].append((item_id, source_file))
             except:
                 pass
                 
         # 3. Resolve
         updates = []
         for rowid, target_key in unresolved:
-            # target_key might be "products.inventory.InventoryService"
+            # target_key might be "products.inventory.InventoryService" or just "InventoryService"
             short_name = target_key.split('.')[-1]
             
             candidates = name_map.get(short_name)
             if candidates:
-                # If multiple, take the first one (ambiguity handling is a v0.4 feature)
-                # Or better, prefer one that matches the path?
-                # For v0.3, simple name match.
-                target_id = candidates[0]
+                target_id = None
+                
+                # Heuristic: If target_key acts like a path (e.g. inventory.InventoryService), 
+                # prefer candidate whose file path contains "inventory"
+                if len(candidates) > 1 and '.' in target_key:
+                    path_fragment = target_key.split('.')[-2].lower() # "inventory"
+                    for cid, cpath in candidates:
+                         if path_fragment in cpath.lower():
+                             target_id = cid
+                             break
+                
+                # Fallback: Pick first
+                if not target_id:
+                    target_id = candidates[0][0]
+                    
                 updates.append((target_id, rowid))
                 resolved_count += 1
         
