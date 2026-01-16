@@ -9,8 +9,9 @@ Standard RAG (Retrieval-Augmented Generation) is often too imprecise for coding 
 **ContextAware solves this by treating your code as a Navigable Graph.**
 *   **Token Efficiency**: Reduces exploration costs by 90% via "Skeleton Mode".
 *   **Contextual Understanding**: LLMs often need to read dozens of files just to understand the project structure and locate relevant code. ContextAware replaces this with a structured map.
-*   **Zero Hallucinations**: Provides explicit dependency chains (Import Graph).
-*   **Scalable**: Built on SQLite + AST Analysis, works on projects of any size.
+*   **Smart Ranking**: Uses PageRank-like scoring to prioritize core architectural components over utility scripts.
+*   **Impact Analysis**: Explicitly answers "What breaks if I change this file?" via reverse graph lookup.
+*   **Scalable**: Built on SQLite + Relational Graph, works on projects of any size.
 *   **Agent-Ready**: Returns structured XML optimized for LLM consumption.
 
 ---
@@ -117,6 +118,12 @@ context_aware read "class:orders/processor.py:OrderProcessor"
     context_aware read "class:pricing.py:PricingService"
     ```
     *Output*: Full Python code of the class.
+
+3.  **Agent plans refactor**: I want to change the User class. context_aware, what depends on it?
+    ```bash
+    context_aware impacts "class:user.py:User"
+    ```
+    *Output*: List of dependents: `AccountService`, `TransactionManager`. "Okay, I need to check those files too."
 
 3.  **Agent executes**: The bug is identified. The agent creates a patch.
 
