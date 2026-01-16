@@ -187,7 +187,7 @@ class SQLiteContextStore:
         )
 
     def get_outbound_edges(self, source_ids: List[str]) -> List[tuple]:
-        """Returns list of (source_id, target_key) for given source_ids."""
+        """Returns list of (source_id, target_key, target_id) for given source_ids."""
         if not source_ids:
             return []
             
@@ -196,7 +196,7 @@ class SQLiteContextStore:
         cursor = conn.cursor()
         
         placeholders = ','.join(['?'] * len(source_ids))
-        cursor.execute(f'SELECT source_id, target_key FROM edges WHERE source_id IN ({placeholders})', source_ids)
+        cursor.execute(f'SELECT source_id, target_key, target_id FROM edges WHERE source_id IN ({placeholders})', source_ids)
         rows = cursor.fetchall()
         
         if use_own_conn:

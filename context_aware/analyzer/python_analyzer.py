@@ -2,8 +2,9 @@ import ast
 import os
 from typing import List, Optional
 from ..models.context_item import ContextItem, ContextLayer
+from .base_analyzer import BaseAnalyzer
 
-class PythonAnalyzer:
+class PythonAnalyzer(BaseAnalyzer):
     def analyze_file(self, file_path: str) -> List[ContextItem]:
         if not os.path.exists(file_path):
             return []

@@ -3,9 +3,11 @@ import os
 import sys
 from ..store.sqlite_store import SQLiteContextStore
 from ..analyzer.python_analyzer import PythonAnalyzer
+from ..analyzer.javascript_analyzer import JavascriptAnalyzer
 from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
 from ..linker.graph_linker import GraphLinker
+from ..exporters.mermaid_exporter import MermaidExporter
 
 def main():
     parser = argparse.ArgumentParser(description="ContextAware CLI")
@@ -14,27 +16,30 @@ def main():
 
     # init command
     init_parser = subparsers.add_parser("init", help="Initialize the context store")
-    # path arg here is redundant if we have --root, but keeping for compatibility if usage was 'init <path>'
-    init_parser.add_argument("path", nargs="?", default=".", help="Project path to initialize")
 
     # index command
     index_parser = subparsers.add_parser("index", help="Index the current project or a file")
     index_parser.add_argument("path", help="Path to file or directory to index")
     index_parser.add_argument("--re-index", action="store_true", help="Force re-indexing if index already exists")
 
-    # search command (formerly query)
-    search_parser = subparsers.add_parser("search", help="Search the context (Skeleton Mode)")
+    # search command
+    search_parser = subparsers.add_parser("search", help="Search the context")
     search_parser.add_argument("text", help="Search text")
     search_parser.add_argument("--type", choices=["class", "function", "file"], help="Filter by item type")
     search_parser.add_argument("--output", help="Output file path (optional)")
     
-    # read command (formerly retrieve)
+    # read command
     read_parser = subparsers.add_parser("read", help="Read specific item content (Full Mode)")
     read_parser.add_argument("id", help="Exact ID of the context item")
     
     # impacts command (Reverse Lookup)
     impacts_parser = subparsers.add_parser("impacts", help="Analyze what depends on a specific item")
     impacts_parser.add_argument("id", help="Target Item ID (e.g. class:user.py:User)")
+
+    # graph command (Visualization)
+    graph_parser = subparsers.add_parser("graph", help="Export dependency graph to Mermaid format")
+    graph_parser.add_argument("--output", help="Output file path (default: stdout)")
+
     
     args = parser.parse_args()
     
@@ -50,22 +55,29 @@ def main():
             print("Use --re-index to overwrite.")
             sys.exit(0)
             
-        analyzer = PythonAnalyzer()
+        analyzer_py = PythonAnalyzer()
+        analyzer_js = JavascriptAnalyzer()
         target_path = os.path.abspath(args.path)
         print(f"Indexing {target_path}...")
         
         items = []
         if os.path.isfile(target_path):
-            items = analyzer.analyze_file(target_path)
+            if target_path.endswith(".py"):
+                items = analyzer_py.analyze_file(target_path)
+            elif target_path.endswith(".js") or target_path.endswith(".ts"):
+                items = analyzer_js.analyze_file(target_path)
+                
         elif os.path.isdir(target_path):
             for root, dirs, files in os.walk(target_path):
                 # skip .context_aware and hidden dirs
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
                 
                 for file in files:
+                    full_path = os.path.join(root, file)
                     if file.endswith(".py"):
-                        full_path = os.path.join(root, file)
-                        items.extend(analyzer.analyze_file(full_path))
+                        items.extend(analyzer_py.analyze_file(full_path))
+                    elif file.endswith(".js") or file.endswith(".ts"):
+                         items.extend(analyzer_js.analyze_file(full_path))
         
         if items:
             store.save(items)
@@ -87,7 +99,7 @@ def main():
         print(f"Found {len(items)} items.")
         
         if items:
-            prompt = compiler.compile(items, mode="skeleton")
+            prompt = compiler.compile_search_results(items)
             
             if args.output:
                 with open(args.output, "w", encoding="utf-8") as f:
@@ -134,7 +146,7 @@ def main():
             
             compiler = SimpleCompiler()
             # Enforce Full Mode for Read
-            prompt = compiler.compile([fresh_item], mode="full")
+            prompt = compiler.compile_read_result(fresh_item)
             print("\n--- Item Content (Full) ---\n")
             print(prompt)
             print("\n---------------------------\n")
@@ -152,6 +164,19 @@ def main():
                 print(f" - [{item.metadata.get('type', 'unknown')}] {item.id}")
         else:
             print("No dependents found (Safe to delete/modify?).")
+
+    elif args.command == "graph":
+        exporter = MermaidExporter(store)
+        chart = exporter.export()
+        
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write("```mermaid\n")
+                f.write(chart)
+                f.write("\n```")
+            print(f"Graph exported to {args.output}")
+        else:
+            print(chart)
         
     else:
         parser.print_help()
