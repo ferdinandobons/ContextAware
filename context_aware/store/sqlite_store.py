@@ -33,15 +33,19 @@ class SQLiteContextStore:
                 content TEXT,
                 metadata TEXT,
                 source_file TEXT,
-                line_number INTEGER
+                line_number INTEGER,
+                score REAL DEFAULT 0
             )
         ''')
         
         # Edges table for relational graph
+        # target_key: the raw string import (e.g. "products.inventory.InventoryService")
+        # target_id: the resolved Item ID (e.g. "class:inventory.py:InventoryService") - populated by Linker
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS edges (
                 source_id TEXT,
                 target_key TEXT,
+                target_id TEXT,
                 relation_type TEXT,
                 PRIMARY KEY (source_id, target_key, relation_type),
                 FOREIGN KEY(source_id) REFERENCES items(id)
@@ -50,6 +54,7 @@ class SQLiteContextStore:
         
         # Index for reverse lookup and joins
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_target_id ON edges(target_id)')
 
         # FTS5 virtual table for search
         # We need to check if FTS5 is available, usually yes in standard python sqlite3
@@ -89,9 +94,9 @@ class SQLiteContextStore:
             
             # Upsert into main table
             cursor.execute('''
-                INSERT OR REPLACE INTO items (id, layer, content, metadata, source_file, line_number)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (item.id, item.layer.value, item.content, meta_json, item.source_file, item.line_number))
+                INSERT OR REPLACE INTO items (id, layer, content, metadata, source_file, line_number, score)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (item.id, item.layer.value, item.content, meta_json, item.source_file, item.line_number, 0.0))
             
             # Update FTS index (delete old if exists, then insert)
             cursor.execute('DELETE FROM items_fts WHERE id = ?', (item.id,))
@@ -110,9 +115,9 @@ class SQLiteContextStore:
                 # We normalize it slightly to help matching.
                 if dep:
                     cursor.execute('''
-                        INSERT OR IGNORE INTO edges (source_id, target_key, relation_type)
-                        VALUES (?, ?, ?)
-                    ''', (item.id, dep, "import"))
+                        INSERT OR IGNORE INTO edges (source_id, target_key, target_id, relation_type)
+                        VALUES (?, ?, ?, ?)
+                    ''', (item.id, dep, None, "import"))
             
         conn.commit()
         conn.close()
@@ -138,8 +143,9 @@ class SQLiteContextStore:
             cursor.execute('''
                 SELECT * FROM items 
                 WHERE id IN (
-                    SELECT id FROM items_fts WHERE items_fts MATCH ? ORDER BY rank
+                    SELECT id FROM items_fts WHERE items_fts MATCH ?
                 )
+                ORDER BY score DESC
             ''', (clean_query,))
         except sqlite3.OperationalError:
              # Fallback if FTS syntax is weird or not supported
@@ -224,3 +230,27 @@ class SQLiteContextStore:
              conn.close()
              
         return results
+
+    def get_inbound_edges(self, target_id: str) -> List[ContextItem]:
+        """
+        Reverse lookup: Find all items that depend on (import/call) the target_id.
+        This uses the 'target_id' column populated by the Linker.
+        """
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Join edges with items to get the full source item
+        cursor.execute('''
+            SELECT i.* 
+            FROM edges e
+            JOIN items i ON e.source_id = i.id
+            WHERE e.target_id = ?
+        ''', (target_id,))
+        
+        rows = cursor.fetchall()
+        
+        if use_own_conn:
+            conn.close()
+            
+        return [self._row_to_item(row) for row in rows]
