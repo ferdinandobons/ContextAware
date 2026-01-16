@@ -26,18 +26,18 @@ Do not read file contents blindly. Use the tool to find what matters.
 
 #### Phase 1: Discovery (Low Cost)
 Ask "Where is the code related to X?" getting only the high-level structure.
-*   **Command**: `context_aware query "your search terms" --mode=skeleton`
+*   **Command**: `context_aware search "your search terms"`
 *   **Goal**: Identify relevant classes/functions and their relationships.
 *   **Output**: You will see signatures and `<dependencies>` tags.
 
 #### Phase 2: Traversal (Optional)
 If a class depends on another service (e.g., `OrderProcessor` uses `InventoryService`), follow the link.
-*   **Command**: `context_aware retrieve "class:inventory.py:InventoryService" --mode=skeleton`
+*   **Command**: `context_aware search "InventoryService"`
 *   **Goal**: Understand the API of the dependency without reading its implementation.
 
 #### Phase 3: Extraction (High Cost, High Value)
 Once you pinpoint the exact function/class to modify or debug, fetch its full source code.
-*   **Command**: `context_aware retrieve "function:file.py:target_function"`
+*   **Command**: `context_aware read "function:file.py:target_function"`
 *   **Goal**: Get the actual code to work on.
 
 ---
@@ -134,7 +134,7 @@ context_aware read "class:orders/processor.py:OrderProcessor"
 *   **Analyzer**: `PythonAnalyzer` extracts symbols and dependencies but **stores only metadata** (pointers) in the DB to keep it light.
 *   **Store**: `SQLiteContextStore` with FTS5 for fast fuzzy search of docstrings and names.
 *   **Router**: `GraphRouter` performs graph traversal on the metadata.
-*   **Retriever**: **On-Demand AST Parsing**. When you request code (`retrieve`), the system reads the file from disk *at that moment* and extracts the function body. This ensures **zero stale data**—you always get the current code.
+*   **Retriever**: **On-Demand AST Parsing**. When you request code (`read`), the system reads the file from disk *at that moment* and extracts the function body. This ensures **zero stale data**—you always get the current code.
 *   **Compiler**: Converts nodes into XML prompts (`<item>`, `<dependencies>`) for the LLM.
 
 ## ⚠️ Limitations
