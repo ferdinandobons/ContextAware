@@ -8,7 +8,17 @@ class SQLiteContextStore:
     def __init__(self, root_dir: str = "."):
         self.storage_dir = os.path.join(root_dir, ".context_aware")
         self.db_path = os.path.join(self.storage_dir, "context.db")
+        self._conn = None
         self._ensure_storage()
+
+    def __enter__(self):
+        self._conn = sqlite3.connect(self.db_path)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def _ensure_storage(self):
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -71,7 +81,8 @@ class SQLiteContextStore:
         return [self._row_to_item(row) for row in rows]
 
     def query(self, query_text: str, type_filter: Optional[str] = None) -> List[ContextItem]:
-        conn = sqlite3.connect(self.db_path)
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         # Clean query for FTS (basic sanitation)
@@ -92,7 +103,9 @@ class SQLiteContextStore:
              ''', (f"%{clean_query}%", f"%{clean_query}%"))
              
         rows = cursor.fetchall()
-        conn.close()
+        
+        if use_own_conn:
+            conn.close()
         
         results = [self._row_to_item(row) for row in rows]
         
@@ -102,11 +115,14 @@ class SQLiteContextStore:
         return results
 
     def get_by_id(self, item_id: str) -> Optional[ContextItem]:
-        conn = sqlite3.connect(self.db_path)
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM items WHERE id = ?', (item_id,))
         row = cursor.fetchone()
-        conn.close()
+        
+        if use_own_conn:
+            conn.close()
         return self._row_to_item(row) if row else None
 
     def _row_to_item(self, row) -> ContextItem:
