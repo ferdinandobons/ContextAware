@@ -5,6 +5,7 @@ from ..store.sqlite_store import SQLiteContextStore
 from ..analyzer.python_analyzer import PythonAnalyzer
 from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
+from ..linker.graph_linker import GraphLinker
 
 def main():
     parser = argparse.ArgumentParser(description="ContextAware CLI")
@@ -30,6 +31,10 @@ def main():
     # read command (formerly retrieve)
     read_parser = subparsers.add_parser("read", help="Read specific item content (Full Mode)")
     read_parser.add_argument("id", help="Exact ID of the context item")
+    
+    # impacts command (Reverse Lookup)
+    impacts_parser = subparsers.add_parser("impacts", help="Analyze what depends on a specific item")
+    impacts_parser.add_argument("id", help="Target Item ID (e.g. class:user.py:User)")
     
     args = parser.parse_args()
     
@@ -65,6 +70,10 @@ def main():
         if items:
             store.save(items)
             print(f"Indexed {len(items)} items.")
+            
+            # --- Phase 1: Linking ---
+            linker = GraphLinker(store)
+            linker.link()
         else:
             print("No items found to index.")
         
@@ -131,6 +140,18 @@ def main():
             print("\n---------------------------\n")
         else:
             print(f"Item not found: {args.id}")
+            
+    elif args.command == "impacts":
+        print(f"Analyzing impacts for: {args.id}...")
+        dependents = store.get_inbound_edges(args.id)
+        
+        if dependents:
+            print(f"Found {len(dependents)} items that depend on this:\n")
+            for item in dependents:
+                # Pretty print: [Type] ID
+                print(f" - [{item.metadata.get('type', 'unknown')}] {item.id}")
+        else:
+            print("No dependents found (Safe to delete/modify?).")
         
     else:
         parser.print_help()
