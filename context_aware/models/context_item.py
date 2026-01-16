@@ -3,12 +3,8 @@ from typing import Dict, Any, Optional
 from enum import Enum
 
 class ContextLayer(str, Enum):
-    GLOBAL = "global"
     PROJECT = "project"
     SEMANTIC = "semantic"
-    TASK = "task"
-    WORKING = "working"
-    DECISION = "decision"
 
 class ContextItem(BaseModel):
     id: str

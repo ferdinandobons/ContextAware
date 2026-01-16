@@ -68,27 +68,48 @@ class JavascriptAnalyzer(BaseAnalyzer):
         return items
 
     def extract_code_by_symbol(self, file_path: str, symbol_name: str) -> Optional[str]:
-        # Simple implementation: read file and try to find the block
-        # Getting full block via regex is hard (braces matching).
-        # For prototype, we verify file exists and return "source read pending implementation"
-        # Or just return full file content for now if symbol found to be safe.
-        
-        # Better: use simple grep logic
+        """
+        Extracts the code block for a given symbol using basic brace counting.
+        """
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Find start line
             start_line = -1
+            # Simple heuristic to find the start declaration
             for i, line in enumerate(lines):
-                if f"class {symbol_name}" in line or f"function {symbol_name}" in line:
+                 # Matches "class Name" or "function Name" or "const Name ="
+                if re.search(r'\b(class|function)\s+' + re.escape(symbol_name) + r'\b', line) or \
+                   re.search(r'\b(const|let|var)\s+' + re.escape(symbol_name) + r'\s*=\s*', line):
                     start_line = i
                     break
             
-            if start_line != -1:
-                # Return 20 lines context for now
-                return "".join(lines[start_line:start_line+20])
+            if start_line == -1:
+                return None
                 
-        except:
-            pass
-        return None
+            # Brace counting to find end of block
+            cnt = 0
+            found_start_brace = False
+            extracted_lines = []
+            
+            for i in range(start_line, len(lines)):
+                line = lines[i]
+                extracted_lines.append(line)
+                
+                open_braces = line.count('{')
+                close_braces = line.count('}')
+                
+                if open_braces > 0:
+                    found_start_brace = True
+                
+                cnt += (open_braces - close_braces)
+                
+                if found_start_brace and cnt <= 0:
+                    # End of block reached
+                    break
+            
+            return "".join(extracted_lines)
+                
+        except Exception as e:
+            print(f"Error reading {file_path}: {e}")
+            return None

@@ -129,7 +129,7 @@ context_aware read "class:orders/processor.py:OrderProcessor"
 
 ---
 
-## 🏗 Architecture (v0.4 - Hybrid Lookup)
+## 🏗 Architecture (v0.2.2 - Hybrid Lookup)
 
 *   **Analyzer**: `PythonAnalyzer` extracts symbols and dependencies but **stores only metadata** (pointers) in the DB to keep it light.
 *   **Store**: `SQLiteContextStore` with FTS5 for fast fuzzy search of docstrings and names.
