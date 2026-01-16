@@ -70,7 +70,7 @@ class SQLiteContextStore:
         conn.close()
         return [self._row_to_item(row) for row in rows]
 
-    def query(self, query_text: str) -> List[ContextItem]:
+    def query(self, query_text: str, type_filter: Optional[str] = None) -> List[ContextItem]:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -93,7 +93,13 @@ class SQLiteContextStore:
              
         rows = cursor.fetchall()
         conn.close()
-        return [self._row_to_item(row) for row in rows]
+        
+        results = [self._row_to_item(row) for row in rows]
+        
+        if type_filter:
+            results = [item for item in results if item.metadata.get("type") == type_filter]
+            
+        return results
 
     def get_by_id(self, item_id: str) -> Optional[ContextItem]:
         conn = sqlite3.connect(self.db_path)

@@ -1,2 +1,0 @@
-[console_scripts]
-context_aware = context_aware.cli.main:main

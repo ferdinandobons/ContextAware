@@ -24,6 +24,7 @@ def main():
     query_parser = subparsers.add_parser("query", help="Query the context")
     query_parser.add_argument("text", help="Query text")
     query_parser.add_argument("--mode", choices=["full", "skeleton"], default="full", help="Output mode")
+    query_parser.add_argument("--type", choices=["class", "function", "file"], help="Filter by item type")
     
     # retrieve command
     retrieve_parser = subparsers.add_parser("retrieve", help="Retrieve specific item by ID")
@@ -65,8 +66,8 @@ def main():
         router = GraphRouter(store)
         compiler = SimpleCompiler()
         
-        print(f"Querying for: '{args.text}' (Mode: {args.mode})")
-        items = router.route(args.text)
+        print(f"Querying for: '{args.text}' (Mode: {args.mode}, Type: {args.type})")
+        items = router.route(args.text, type_filter=args.type)
         print(f"Found {len(items)} items.")
         
         if items:
