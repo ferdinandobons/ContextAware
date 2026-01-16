@@ -42,11 +42,9 @@ Once you pinpoint the exact function/class to modify or debug, fetch its full so
 
 ## � Installation & Setup
 
-1.  **Install the package** (Developer Mode):
+1.  **Install via pip**:
     ```bash
-    git clone https://github.com/your-repo/ContextAware.git
-    cd ContextAware
-    pip install -e .
+    pip install context-aware
     ```
 
 2.  **Initialize a Project**:

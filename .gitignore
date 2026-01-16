@@ -17,3 +17,8 @@ env/
 
 # ContextAware
 .context_aware/
+
+# Distribution / Build
+dist/
+build/
+*.egg-info/
