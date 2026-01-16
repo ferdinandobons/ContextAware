@@ -81,8 +81,8 @@ Parses Python files, extracts AST nodes (classes, functions, imports), and updat
 context_aware index ./src
 ```
 
-### 3. Search (Skeleton Mode)
-Search for relevant code. Returns a "skeleton" view (signatures + docstrings + dependencies) to keep context light.
+### 3. Search
+Search for relevant code context. Returns signatures, docstrings, and dependencies.
 ```bash
 context_aware search "order processing"
 ```
@@ -90,7 +90,7 @@ Options:
 - `--type <class|function|file>`: Filter results.
 - `--output <file>`: Save results to a file.
 
-### 4. Read (Full Mode)
+### 4. Read
 Read the full source code of a specific item found during search.
 ```bash
 context_aware read "class:orders/processor.py:OrderProcessor"
