@@ -31,4 +31,5 @@ context_aware = "context_aware.cli.main:main"
 
 [tool.setuptools.packages.find]
 include = ["context_aware*"]
-exclude = ["demo_ecommerce*", "tests*"]
+exclude = ["demo_ecommerce*", "tests*", "test_projects*"]
+
