@@ -9,6 +9,40 @@ class GraphLinker:
     """
     def __init__(self, store: SQLiteContextStore):
         self.store = store
+        # Common standard library modules to ignore/classify as external
+        self.PYTHON_STDLIB = {
+            'abc', 'argparse', 'ast', 'asyncio', 'base64', 'collections', 
+            'contextlib', 'copy', 'csv', 'datetime', 'decimal', 'enum', 
+            'functools', 'hashlib', 'hmac', 'importlib', 'inspect', 'io', 
+            'itertools', 'json', 'logging', 'math', 'multiprocessing', 'os', 
+            'pathlib', 'pickle', 'platform', 'pprint', 'random', 're', 
+            'shutil', 'signal', 'socket', 'sqlite3', 'ssl', 'stat', 'string', 
+            'subprocess', 'sys', 'tempfile', 'threading', 'time', 'traceback', 
+            'typing', 'unittest', 'urllib', 'uuid', 'warnings', 'weakref', 
+            'zipfile', 'zlib'
+        }
+
+    def is_external(self, target_key: str) -> bool:
+        """
+        Checks if a target key is likely an external library or standard library.
+        """
+        if not target_key:
+            return False
+            
+        # Top-level check (e.g. "json", "os")
+        root_module = target_key.split('.')[0]
+        
+        # Python Stdlib Check
+        if root_module in self.PYTHON_STDLIB:
+            return True
+            
+        # JS/TS Check: if it doesn't start with ./ or ../ and contains no / or starts with @
+        # Heuristic: standard imports are "react", "fs", "@angular/core"
+        # Local paths are "./utils", "../components/Header"
+        if '/' not in root_module and not target_key.startswith('.'):
+             return True
+             
+        return False
 
     def link(self):
         """
@@ -29,6 +63,8 @@ class GraphLinker:
             return
 
         resolved_count = 0
+        external_count = 0
+        truly_unresolved_count = 0
         
         # 2. For each edge, try to find a matching item
         # Strategy: Fetch all (name, id, source_file) from items.
@@ -53,6 +89,10 @@ class GraphLinker:
         # 3. Resolve
         updates = []
         for rowid, target_key in unresolved:
+            if not target_key:
+                truly_unresolved_count += 1
+                continue
+
             # target_key might be "products.inventory.InventoryService" or just "InventoryService"
             short_name = target_key.split('.')[-1]
             
@@ -75,13 +115,24 @@ class GraphLinker:
                     
                 updates.append((target_id, rowid))
                 resolved_count += 1
+            else:
+                # Check if External
+                if self.is_external(target_key):
+                    external_count += 1
+                else:
+                    truly_unresolved_count += 1
         
         # 4. Batch Update target_ids
         if updates:
             cursor.executemany("UPDATE edges SET target_id = ? WHERE rowid = ?", updates)
             conn.commit()
             
-        print(f"Linked {resolved_count}/{len(unresolved)} edges.")
+        # Detailed Reporting
+        print("\nGraph Linking Report:")
+        print(f"  - Internal Linked:   {resolved_count}")
+        print(f"  - External/StdLib:   {external_count}")
+        print(f"  - Unresolved:        {truly_unresolved_count}")
+        print(f"  (Total Processed: {len(unresolved)})\n")
         
         # --- Phase 3: Smart Ranking (Centrality Scoring) ---
         print("Calculating importance scores...")

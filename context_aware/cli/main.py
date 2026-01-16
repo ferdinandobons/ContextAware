@@ -4,10 +4,13 @@ import sys
 from ..store.sqlite_store import SQLiteContextStore
 from ..analyzer.python_analyzer import PythonAnalyzer
 from ..analyzer.javascript_analyzer import JavascriptAnalyzer
+from ..analyzer.go_analyzer import GoAnalyzer
 from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
 from ..linker.graph_linker import GraphLinker
+from ..linker.graph_linker import GraphLinker
 from ..exporters.mermaid_exporter import MermaidExporter
+from ..server.simple_server import start_server
 from tqdm import tqdm
 
 def main():
@@ -41,6 +44,10 @@ def main():
     graph_parser = subparsers.add_parser("graph", help="Export dependency graph to Mermaid format")
     graph_parser.add_argument("--output", help="Output file path (default: stdout)")
 
+    # serve command (Interactive UI)
+    serve_parser = subparsers.add_parser("serve", help="Start interactive context server")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+
     
     args = parser.parse_args()
     
@@ -51,51 +58,78 @@ def main():
         print(f"Initialized ContextAware store at {store.db_path}")
         
     elif args.command == "index":
-        if store.has_index() and not args.re_index:
-            print(f"Index already exists at {store.db_path}.")
-            print("Use --re-index to overwrite.")
-            sys.exit(0)
+        # Note: we removed the "Index already exists" check to allow incremental updates.
             
         analyzer_py = PythonAnalyzer()
         analyzer_js = JavascriptAnalyzer()
+        analyzer_go = GoAnalyzer()
         target_path = os.path.abspath(args.path)
         print(f"Indexing {target_path}...")
         
-        items = []
+        files_to_process = []
+        all_scanned_files = [] # Keep track of all files to detect deletions
+        
         if os.path.isfile(target_path):
-            if target_path.endswith(".py"):
-                items = analyzer_py.analyze_file(target_path)
-            elif target_path.endswith(".js") or target_path.endswith(".ts"):
-                items = analyzer_js.analyze_file(target_path)
+            if target_path.endswith((".py", ".js", ".ts", ".go")):
+                all_scanned_files.append(target_path)
+                mtime = os.path.getmtime(target_path)
+                if args.re_index or store.should_reindex(target_path, mtime):
+                    files_to_process.append(target_path)
                 
         elif os.path.isdir(target_path):
-            files_to_process = []
             print("Scanning files...")
             for root, dirs, files in os.walk(target_path):
                 # skip .context_aware and hidden dirs
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
                 
                 for file in files:
-                    if file.endswith((".py", ".js", ".ts")):
-                        files_to_process.append(os.path.join(root, file))
+                    if file.endswith((".py", ".js", ".ts", ".go")):
+                        full_path = os.path.join(root, file)
+                        all_scanned_files.append(full_path)
+                        
+                        mtime = os.path.getmtime(full_path)
+                        if args.re_index or store.should_reindex(full_path, mtime):
+                           files_to_process.append(full_path)
 
-            print(f"Found {len(files_to_process)} files to index.")
+        # 1. Cleanup Deleted Files
+        # Only cleanup if we scanned a directory (meaning we expect to see everything there)
+        # If user points to a single file, we shouldn't delete other stuff.
+        # However, for simplicity, incremental index is usually run on root.
+        # Let's run cleanup only if target is dir.
+        if os.path.isdir(target_path):
+             store.cleanup_deleted_files(all_scanned_files)
+
+        print(f"Found {len(files_to_process)} changed files to index (out of {len(all_scanned_files)} total).")
+        
+        items = []
+        for full_path in tqdm(files_to_process, desc="Indexing", unit="file"):
+            current_items = []
+            if full_path.endswith(".py"):
+                current_items = analyzer_py.analyze_file(full_path)
+            elif full_path.endswith(".js") or full_path.endswith(".ts"):
+                current_items = analyzer_js.analyze_file(full_path)
+            elif full_path.endswith(".go"):
+                current_items = analyzer_go.analyze_file(full_path)
             
-            for full_path in tqdm(files_to_process, desc="Indexing", unit="file"):
-                if full_path.endswith(".py"):
-                    items.extend(analyzer_py.analyze_file(full_path))
-                elif full_path.endswith(".js") or full_path.endswith(".ts"):
-                        items.extend(analyzer_js.analyze_file(full_path))
+            if current_items:
+                items.extend(current_items)
+                # Update tracking status immediately after successful analysis
+                store.update_file_status(full_path, os.path.getmtime(full_path))
         
         if items:
             store.save(items)
-            print(f"Indexed {len(items)} items.")
+            print(f"Indexed {len(items)} new/modified items.")
             
             # --- Phase 1: Linking ---
+            # We must re-link EVERYTHING because a change in one file (e.g. new class)
+            # might resolve a dangling edge in another unchanged file.
+            # Efficiency note: Linker could be optimized to only check unresolved edges, 
+            # but for now re-linking the graph is safer and fast enough (metadata only).
+            print("Updating graph links...")
             linker = GraphLinker(store)
             linker.link()
         else:
-            print("No items found to index.")
+            print("No new items found to index.")
         
     elif args.command == "search":
         router = GraphRouter(store)
@@ -186,6 +220,9 @@ def main():
         else:
             print(chart)
         
+    elif args.command == "serve":
+        start_server(store, port=args.port)
+
     else:
         parser.print_help()
 

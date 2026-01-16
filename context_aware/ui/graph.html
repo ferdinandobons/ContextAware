@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContextAware Graph</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; }
+        #network { width: 100vw; height: 100vh; background: #222; }
+        #details {
+            position: absolute; top: 20px; right: 20px; width: 300px;
+            background: rgba(255, 255, 255, 0.9); padding: 15px;
+            border-radius: 8px; display: none; max-height: 80vh; overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h2 { margin-top: 0; font-size: 18px; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        .legend {
+            position: absolute; bottom: 20px; left: 20px; background: rgba(255,255,255,0.8);
+            padding: 10px; border-radius: 5px;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+    </style>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <div id="network"></div>
+    <div id="details">
+        <h2 id="node-id"></h2>
+        <p><strong>Type:</strong> <span id="node-type"></span></p>
+        <p><strong>Deps:</strong> <span id="node-deps"></span></p>
+        <pre id="node-content"></pre>
+    </div>
+    
+    <div class="legend">
+        <div class="legend-item"><div class="dot" style="background:#97C2FC"></div>Function</div>
+        <div class="legend-item"><div class="dot" style="background:#FB7E81"></div>Class</div>
+        <div class="legend-item"><div class="dot" style="background:#FFFF00"></div>File</div>
+    </div>
+
+    <script type="text/javascript">
+        fetch('/api/graph')
+            .then(response => response.json())
+            .then(data => {
+                const nodes = new vis.DataSet(data.nodes);
+                const edges = new vis.DataSet(data.edges);
+
+                const container = document.getElementById('network');
+                const dataSet = { nodes: nodes, edges: edges };
+                const options = {
+                    nodes: { shape: 'dot', size: 16 },
+                    physics: {
+                        forceAtlas2Based: { gravitationalConstant: -26, centralGravity: 0.005, springLength: 230, springConstant: 0.18 },
+                        maxVelocity: 146,
+                        solver: 'forceAtlas2Based',
+                        timestep: 0.35,
+                        stabilization: { iterations: 150 }
+                    }
+                };
+                
+                const network = new vis.Network(container, dataSet, options);
+
+                network.on("click", function (params) {
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        fetch(`/api/item?id=${encodeURIComponent(nodeId)}`)
+                            .then(res => res.json())
+                            .then(item => {
+                                document.getElementById('details').style.display = 'block';
+                                document.getElementById('node-id').innerText = item.id;
+                                document.getElementById('node-type').innerText = item.metadata.type || 'unknown';
+                                document.getElementById('node-deps').innerText = (item.metadata.dependencies || []).length;
+                                document.getElementById('node-content').innerText = item.content.substring(0, 500) + (item.content.length > 500 ? "..." : "");
+                            });
+                    } else {
+                        document.getElementById('details').style.display = 'none';
+                    }
+                });
+            });
+    </script>
+</body>
+</html>

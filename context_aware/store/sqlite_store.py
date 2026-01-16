@@ -56,6 +56,14 @@ class SQLiteContextStore:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_target_id ON edges(target_id)')
 
+        # Tracked files for incremental indexing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tracked_files (
+                path TEXT PRIMARY KEY,
+                last_modified REAL
+            )
+        ''')
+
         # FTS5 virtual table for search
         # We need to check if FTS5 is available, usually yes in standard python sqlite3
         try:
@@ -254,3 +262,114 @@ class SQLiteContextStore:
             conn.close()
             
         return [self._row_to_item(row) for row in rows]
+
+    def should_reindex(self, file_path: str, current_mtime: float) -> bool:
+        """Returns True if file needs to be re-indexed (new or modified)."""
+        # Normalize path
+        abs_path = os.path.abspath(file_path)
+        
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT last_modified FROM tracked_files WHERE path = ?', (abs_path,))
+            result = cursor.fetchone()
+            
+            if result is None:
+                return True # New file
+                
+            stored_mtime = result[0]
+            # Check if modified (using a small epsilon for float comparison safety, though simple inequality usually works)
+            return abs(current_mtime - stored_mtime) > 0.001
+            
+        finally:
+            if use_own_conn:
+                conn.close()
+
+    def update_file_status(self, file_path: str, current_mtime: float):
+        """Updates the tracked modified time for a file."""
+        abs_path = os.path.abspath(file_path)
+        
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO tracked_files (path, last_modified)
+                VALUES (?, ?)
+            ''', (abs_path, current_mtime))
+            conn.commit()
+        finally:
+            if use_own_conn:
+                conn.close()
+
+    def cleanup_deleted_files(self, current_files: List[str]):
+        """Removes items and tracking info for files that no longer exist."""
+        # Normalize all current files
+        current_files_set = set(os.path.abspath(f) for f in current_files)
+        
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Get all tracked files
+            cursor.execute('SELECT path FROM tracked_files')
+            row_paths = cursor.fetchall()
+            tracked_paths = [r[0] for r in row_paths]
+            
+            # Find missing files
+            missing_files = [p for p in tracked_paths if p not in current_files_set]
+            
+            if missing_files:
+                for missing in missing_files:
+                    # 1. Remove from tracked_files
+                    cursor.execute('DELETE FROM tracked_files WHERE path = ?', (missing,))
+                    
+                    # 2. Remove items derived from this file
+                    # We stored 'source_file' in items table. 
+                    # Note: source_file might be absolute or relative depending on how it was saved.
+                    # Ideally we should strictly use absolute paths everywhere.
+                    # For now, let's try to match both just in case, or rely on what we saved.
+                    cursor.execute('DELETE FROM items WHERE source_file = ?', (missing,))
+                    
+                    # Also delete items that MIGHT be relative path if that's what we stored?
+                    # The analyzer seems to store absolute path in 'source_file' if passed absolute path.
+                    
+                    # Cleanup edges where source was deleted (cascade from items? no proper cascade set on items delete?)
+                    # We set FOREIGN KEY but did we enable foreign keys? simpler to delete edges explicitly or rely on next save cleanup.
+                    # But if we delete items, we should delete edges.
+                    # We'll rely on a separate query or join delete for edges.
+                    
+                    # Let's clean orphan edges just in case
+                    # (This is expensive to do one by one, better to do by subquery)
+                    
+                # Batch cleanup edges for missing file items
+                # "DELETE FROM edges WHERE source_id NOT IN (SELECT id FROM items)"
+                cursor.execute('DELETE FROM edges WHERE source_id NOT IN (SELECT id FROM items)')
+                
+                # Also clean FTS
+                cursor.execute('DELETE FROM items_fts WHERE id NOT IN (SELECT id FROM items)')
+
+                conn.commit()
+                print(f"Cleaned up {len(missing_files)} deleted files.")
+                
+        finally:
+            if use_own_conn:
+                conn.close()
+
+    def get_all_edges(self) -> List[tuple]:
+        """Returns all edges in the graph as (source_id, target_key, target_id, relation_type)."""
+        use_own_conn = self._conn is None
+        conn = self._conn if self._conn else sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT source_id, target_key, target_id, relation_type FROM edges')
+        rows = cursor.fetchall()
+        
+        if use_own_conn:
+            conn.close()
+            
+        return rows
