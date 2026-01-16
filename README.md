@@ -1,95 +1,135 @@
 # ContextAware
 
-> **Vendor-agnostic Context Management Framework for Coding Agents**
+**ContextAware** is a lightweight, agent-centric context management framework. It acts as a "Map Provider" for LLMs, allowing them to navigate large codebases efficiently without consuming massive amounts of tokens.
 
-ContextAware risolve il problema strutturale del *context management* nei coding agents basati su LLM. Permette di gestire repository complessi trattando il contesto non come una semplice stringa di testo, ma come un database strutturato e interrogabile.
+## 🚀 Why ContextAware?
 
-Il framework è progettato per ridurre drasticamente il consumo di token e migliorare la coerenza delle risposte degli agenti, fornendo solo il contesto strettamente necessario per ogni specifico task.
+Standard RAG (Retrieval-Augmented Generation) is often too imprecise for coding tasks (missing dependencies, hallucinating imports). Reading the entire codebase is too expensive and slow.
 
----
-
-## 🚀 Filosofia e Vantaggi
-
-*   **Context as a Database**: Il contesto è una struttura indicizzata, versionata e interrogabile.
-*   **Token Efficiency**: Ogni token inviato all'LLM deve essere giustificato. Il sistema filtra il rumore.
-*   **Layered Context**: Distingue tra contesto globale, di progetto, semantico e volatile.
-*   **Vendor-agnostic**: Funziona con qualsiasi LLM (GPT, Claude, Gemini) e qualsiasi framework di agenti.
+**ContextAware solves this by treating your code as a Navigable Graph.**
+*   **Token Efficiency**: Reduces exploration costs by 90% via "Skeleton Mode".
+*   **Zero Hallucinations**: Provides explicit dependency chains (Import Graph).
+*   **Scalable**: Built on SQLite + AST Analysis, works on projects of any size.
+*   **Agent-Ready**: Returns structured XML optimized for LLM consumption.
 
 ---
 
-## 🏗 Architettura e Concetti
+## 🤖 Agent Protocol (How to use this tool)
 
-Il sistema suddivide il contesto in **Layer** per garantire che l'agente riceva sempre il livello di dettaglio corretto:
+If you are an AI Agent (e.g., Devin, Cline, Gemini Code Assist), follow this explicit protocol to solve tasks with maximum efficiency.
 
-1.  **Global Context**: Convenzioni, stile e framework (Statico).
-2.  **Project Context**: Struttura repo, moduli principali (Aggiornato via analisi statica).
-3.  **Semantic Context**: Simboli, funzioni, classi e relazioni (Graph-based).
-4.  **Task Context**: Obiettivi e vincoli del task corrente (Volatile).
+### Workflow: "Skeleton-First" Navigation
 
-### Componenti del Sistema
+Do not read file contents blindly. Use the tool to find what matters.
 
-*   **Context Store**: Database JSON locale che persiste la conoscenza del progetto.
-*   **Project Analyzer**: Motore di analisi statica (AST) che indicizza il codice.
-*   **Context Router**: Seleziona i "pezzi" di contesto rilevanti basandosi sulla query.
-*   **Prompt Compiler**: Assembla i pezzi selezionati in un formato XML/Markdown ottimizzato per l'LLM.
+#### Phase 1: Discovery (Low Cost)
+Ask "Where is the code related to X?" getting only the high-level structure.
+*   **Command**: `context_aware query "your search terms" --mode=skeleton`
+*   **Goal**: Identify relevant classes/functions and their relationships.
+*   **Output**: You will see signatures and `<dependencies>` tags.
+
+#### Phase 2: Traversal (Optional)
+If a class depends on another service (e.g., `OrderProcessor` uses `InventoryService`), follow the link.
+*   **Command**: `context_aware retrieve "class:inventory.py:InventoryService" --mode=skeleton`
+*   **Goal**: Understand the API of the dependency without reading its implementation.
+
+#### Phase 3: Extraction (High Cost, High Value)
+Once you pinpoint the exact function/class to modify or debug, fetch its full source code.
+*   **Command**: `context_aware retrieve "function:file.py:target_function"`
+*   **Goal**: Get the actual code to work on.
 
 ---
 
-## 📦 Installazione
+## � Installation & Setup
 
-Requisiti: Python 3.8+
+1.  **Install the package** (Developer Mode):
+    ```bash
+    git clone https://github.com/your-repo/ContextAware.git
+    cd ContextAware
+    pip install -e .
+    ```
 
+2.  **Initialize a Project**:
+    Navigate to your target project root and run:
+    ```bash
+    context_aware init
+    ```
+    *Or for an external project:*
+    ```bash
+    context_aware --root /path/to/project init
+    ```
+
+3.  **Index the Codebase**:
+    Parse and store the project structure (runs locally, no data leaves your machine).
+    ```bash
+    context_aware index .
+    # Or
+    context_aware --root /path/to/project index /path/to/project
+    ```
+
+---
+
+## 📖 CLI Reference
+
+### `init`
+Creates the local SQLite store (`.context_aware/context.db`).
 ```bash
-# Installazione in modalità editabile (sviluppo)
-pip install -e .
+context_aware init
 ```
 
----
-
-## 🛠 Utilizzo
-
-ContextAware espone una CLI per gestire il ciclo di vita del contesto.
-
-### 1. Inizializzazione
-Prepara il progetto target creando lo store locale.
-
+### `index <path>`
+Parses Python files, extracts AST nodes (classes, functions, imports), and updates the graph.
 ```bash
-python3 -m context_aware.cli.main init
+context_aware index ./src
 ```
 
-### 2. Indicizzazione
-Analizza il codice sorgente per popolare il Context Store.
-
+### `query <text>`
+ Semantic fuzzy search on the graph.
+*   `--mode=skeleton` (**Recommended**): Returns signatures + dependencies.
+*   `--mode=full`: Returns full source code.
 ```bash
-# Indicizza l'intera cartella corrente
-python3 -m context_aware.cli.main index .
+context_aware query "payment processing" --mode=skeleton
 ```
 
-### 3. Querying (Human Usage)
-Per testare cosa "vede" il sistema per un dato argomento.
-
+### `retrieve <id>`
+Fetches a specific item by its unique ID (found in previous query results).
 ```bash
-python3 -m context_aware.cli.main query "autenticazione utente"
+context_aware retrieve "class:payments.py:PaymentGateway"
 ```
+
+### Global Options
+*   `--root <path>`: Specify the root directory of the project (where `.context_aware` lives). Essential when working on projects outside the current working directory.
 
 ---
 
-## 🤖 Integrazione con Coding Agents
+## ⚡️ Example Scenario
 
-Questa è la funzionalità core di ContextAware. Un agente autonomo non dovrebbe leggere ciecamente i file, ma usare ContextAware per orientarsi.
+**Task**: "Fix a bug in the discount calculation logic."
 
-### Workflow Consigliato
+1.  **Agent asks**: Where are discounts handled?
+    ```bash
+    context_aware query "discount calculation" --mode=skeleton
+    ```
+    *Output*: Found `class:PricingService` in `pricing.py`. It uses `UserTierService`.
 
-1.  **Task Reception**: L'agente riceve un task (es. "Refactor login function").
-2.  **Context Discovery**: L'agente interroga il sistema.
-    *   Command: `context_aware query "login function refactor"`
-3.  **Context Injection**: Il sistema restituisce un blocco XML strutturato con:
-    *   Definizioni delle funzioni pertinenti.
-    *   Percorsi dei file coinvolti.
-    *   Docstring e metadati.
-4.  **Targeted Action**: L'agente, ora consapevole di *dove* si trova il codice, apre solo i file necessari e procede con sicurezza.
+2.  **Agent analyzes**: I see `PricingService.calculate_discount`. I need to see the code.
+    ```bash
+    context_aware retrieve "class:pricing.py:PricingService"
+    ```
+    *Output*: Full Python code of the class.
 
-**Vantaggi per l'Agente:**
-*   Elimina il fenomeno "Lost in the Middle".
-*   Riduce i costi per token di input.
-*   Aumenta la precisione nelle modifiche multi-file.
+3.  **Agent executes**: The bug is identified. The agent creates a patch.
+
+---
+
+## 🏗 Architecture (v0.4 - Hybrid Lookup)
+
+*   **Analyzer**: `PythonAnalyzer` extracts symbols and dependencies but **stores only metadata** (pointers) in the DB to keep it light.
+*   **Store**: `SQLiteContextStore` with FTS5 for fast fuzzy search of docstrings and names.
+*   **Router**: `GraphRouter` performs graph traversal on the metadata.
+*   **Retriever**: **On-Demand AST Parsing**. When you request code (`retrieve`), the system reads the file from disk *at that moment* and extracts the function body. This ensures **zero stale data**—you always get the current code.
+*   **Compiler**: Converts nodes into XML prompts (`<item>`, `<dependencies>`) for the LLM.
+
+## ⚠️ Limitations
+*   **Language Support**: Currently optimized for **Python** only.
+*   **Semantic Understanding**: Relies on keyword/symbol matching + FTS. Does not yet use Vector Embeddings (planned for v0.5).

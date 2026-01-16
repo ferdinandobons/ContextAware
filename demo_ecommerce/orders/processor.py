@@ -1,40 +1,36 @@
 from datetime import datetime
-from ..products.inventory import InventoryService
-from ..products.pricing import PricingService
+from products.inventory import InventoryService
+from products.pricing import PricingService
 
 class OrderProcessor:
-    """
-    Orchestrates the order creation workflow.
-    """
+    """Orchestrates the order creation workflow."""
+    
     def __init__(self):
         self.inventory = InventoryService()
         self.pricing = PricingService()
-        self.orders = {}
-
-    def create_order(self, user_id: str, sku: str, quantity: int, region: str) -> dict:
+        
+    def create_order(self, user_id: str, items: list) -> dict:
         """
-        Creates an order if stock is available.
-        Calculates total price including tax.
+        Creates an order for the user.
+        Steps:
+        1. Check stock
+        2. Calculate price
+        3. Reserve stock
+        4. Create order record
         """
-        if not self.inventory.check_stock(sku, quantity):
-            raise Exception("Out of stock")
-
-        unit_price = self.pricing.get_price(sku)
-        total_base = unit_price * quantity
-        tax = self.pricing.calculate_tax(total_base, region)
-        total = total_base + tax
+        # FRESHNESS TEST: This comment should appear in retrieval!
+        if not self.inventory.check_stock(items):
+            raise ValueError("Out of stock")
+            
+        total = self.pricing.calculate_total(items, user_id)
+        order_id = f"ORD-{datetime.now().timestamp()}"
         
-        order_id = f"ord_{int(datetime.now().timestamp())}"
+        self.inventory.reserve(items)
         
-        # Reserve stock
-        self.inventory.reserve_stock(sku, quantity)
-        
-        order = {
+        return {
             "id": order_id,
-            "user": user_id,
-            "items": [{"sku": sku, "qty": quantity, "price": unit_price}],
+            "user_id": user_id,
             "total": total,
-            "status": "created"
+            "items": items,
+            "status": "CREATED"
         }
-        self.orders[order_id] = order
-        return order
