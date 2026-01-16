@@ -99,7 +99,7 @@ def main():
         print(f"Found {len(items)} items.")
         
         if items:
-            prompt = compiler.compile(items, mode="skeleton")
+            prompt = compiler.compile_search_results(items)
             
             if args.output:
                 with open(args.output, "w", encoding="utf-8") as f:
@@ -146,7 +146,7 @@ def main():
             
             compiler = SimpleCompiler()
             # Enforce Full Mode for Read
-            prompt = compiler.compile([fresh_item], mode="full")
+            prompt = compiler.compile_read_result(fresh_item)
             print("\n--- Item Content (Full) ---\n")
             print(prompt)
             print("\n---------------------------\n")
