@@ -8,6 +8,7 @@ from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
 from ..linker.graph_linker import GraphLinker
 from ..exporters.mermaid_exporter import MermaidExporter
+from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description="ContextAware CLI")
@@ -68,16 +69,23 @@ def main():
                 items = analyzer_js.analyze_file(target_path)
                 
         elif os.path.isdir(target_path):
+            files_to_process = []
+            print("Scanning files...")
             for root, dirs, files in os.walk(target_path):
                 # skip .context_aware and hidden dirs
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
                 
                 for file in files:
-                    full_path = os.path.join(root, file)
-                    if file.endswith(".py"):
-                        items.extend(analyzer_py.analyze_file(full_path))
-                    elif file.endswith(".js") or file.endswith(".ts"):
-                         items.extend(analyzer_js.analyze_file(full_path))
+                    if file.endswith((".py", ".js", ".ts")):
+                        files_to_process.append(os.path.join(root, file))
+
+            print(f"Found {len(files_to_process)} files to index.")
+            
+            for full_path in tqdm(files_to_process, desc="Indexing", unit="file"):
+                if full_path.endswith(".py"):
+                    items.extend(analyzer_py.analyze_file(full_path))
+                elif full_path.endswith(".js") or full_path.endswith(".ts"):
+                        items.extend(analyzer_js.analyze_file(full_path))
         
         if items:
             store.save(items)
