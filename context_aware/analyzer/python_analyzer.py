@@ -16,7 +16,7 @@ class PythonAnalyzer:
             return [] # Skip invalid files
             
         items = []
-        rel_path = os.path.basename(file_path) # Simplified for MVP, ideally relative to project root
+        rel_path = os.path.basename(file_path) # Simplified for now, ideally relative to project root
         
         # Whole file context
         imports = self._extract_imports(tree)

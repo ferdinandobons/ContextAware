@@ -38,7 +38,7 @@ class GraphRouter:
                         
                         # We can't query by ID directly as we don't know the file path.
                         # We query content/metadata for the name.
-                        # For performance, we'd want a specific lookup, but querying FTS for the name works for MVP.
+                        # For performance, we'd want a specific lookup, but querying FTS for the name works for now.
                         
                         # Optimization: Use a specialized query or load all and filter (bad for scale).
                         # Better: SQLite query by metadata field if we extracted it, but it's JSON.

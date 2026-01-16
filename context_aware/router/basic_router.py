@@ -8,7 +8,7 @@ class BasicRouter:
 
     def route(self, query: str) -> List[ContextItem]:
         items = self.load() # Was self.store.query(query) but that filtered inside store. We need all items to score them.
-        # Ideally store should support this, but for MVP we fetch all and filter in memory
+        # Ideally store should support this, but for now we fetch all and filter in memory
         
         results = []
         query_tokens = query.lower().split()

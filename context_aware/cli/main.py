@@ -7,7 +7,7 @@ from ..router.graph_router import GraphRouter
 from ..compiler.simple_compiler import SimpleCompiler
 
 def main():
-    parser = argparse.ArgumentParser(description="ContextAware MVP CLI")
+    parser = argparse.ArgumentParser(description="ContextAware CLI")
     parser.add_argument("--root", default=".", help="Root directory of the project (containing .context_aware)")
     subparsers = parser.add_subparsers(dest="command")
 
