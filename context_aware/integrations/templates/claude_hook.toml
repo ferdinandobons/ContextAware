@@ -1,0 +1,10 @@
+# ContextAware pre-prompt hook for Claude Code
+# Injects project structure before each user prompt
+
+[[hooks]]
+event = "UserPromptSubmit"
+
+[hooks.run]
+command = "context_aware"
+args = ["structure", "--compact", "--inject"]
+timeout = 5000

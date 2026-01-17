@@ -16,9 +16,10 @@ Standard RAG (Retrieval-Augmented Generation) is often too imprecise for coding 
 
 ## 🌍 Supported Languages
 
-*   **Python**: Full support (Classes, Functions, Imports).
-*   **JavaScript**: ES6 Modules & CommonJS support.
-*   **TypeScript**: Basic support (Structure analysis).
+*   **Python**: Full support via **Tree-sitter** (Classes, Functions, Imports).
+*   **JavaScript/TypeScript**: Full support via **Tree-sitter** (Classes, Functions, Variables).
+*   **Go**: Full support via **Tree-sitter** (Structs, Interfaces, Functions).
+*   **Other Languages**: Easily extensible thanks to the new generic Tree-sitter analyzer.
 
 
 ---
@@ -88,6 +89,8 @@ context_aware init
 Parses Python files, extracts AST nodes (classes, functions, imports), and updates the graph.
 ```bash
 context_aware index ./src
+# Optional: Generate embeddings for semantic search (slower)
+context_aware index ./src --semantic
 ```
 
 ### `search <query>`
@@ -98,6 +101,7 @@ context_aware search "order processing"
 Options:
 - `--type <class|function|file>`: Filter results.
 - `--output <file>`: Save results to a file.
+- `--semantic`: Enable Hybrid Semantic Search (combines keywords + embeddings). Requires `sentence-transformers`.
 
 ### `read <id>`
 Read the full source code of a specific item found during search.
@@ -115,6 +119,20 @@ context_aware impacts "class:user.py:User"
 Export the dependency graph to Mermaid format.
 ```bash
 context_aware graph --output architecture.mmd
+```
+
+### `serve` (or `mcp`)
+Starts the **Model Context Protocol (MCP)** server. This allows AI Agents (like Claude Desktop) to mount the repository as a resource, enabling direct tool usage (`search`, `read`, `impacts`) over stdio.
+```bash
+context_aware serve
+# or
+context_aware mcp
+```
+
+### `ui`
+Starts the interactive visualization server (Browser UI).
+```bash
+context_aware ui --port 8000
 ```
 
 
@@ -151,7 +169,7 @@ context_aware graph --output architecture.mmd
 
 ## 🏗 Architecture
 
-*   **Analyzer**: `PythonAnalyzer` extracts symbols and dependencies but **stores only metadata** (pointers) in the DB to keep it light.
+*   **Analyzer**: `TreeSitterAnalyzer` provides robust, error-tolerant parsing for Python, JS, TS, and Go. Extracts symbols and dependencies while **storing only metadata** in the DB.
 *   **Store**: `SQLiteContextStore` with FTS5 for fast fuzzy search of docstrings and names.
 *   **Router**: `GraphRouter` performs graph traversal on the metadata.
 *   **Retriever**: **On-Demand AST Parsing**. When you request code (`read`), the system reads the file from disk *at that moment* and extracts the function body. This ensures **zero stale data**—you always get the current code.

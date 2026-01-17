@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "context-aware"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
-  { name="Ferdinando Bonsegna", email="ferdinando@example.com" },
+  { name="Ferdinando Bonsegna" },
 ]
 description = "A lightweight, agent-centric context management framework for LLMs."
 readme = "README.md"
@@ -21,14 +21,27 @@ classifiers = [
 dependencies = [
     "pydantic>=2.0.0",
     "tqdm>=4.0.0",
+    "mcp>=1.0.0",
+    "tree-sitter>=0.20.0,<0.21.0",
+    "tree-sitter-languages>=1.0.0",
+]
+
+[project.optional-dependencies]
+semantic = [
+    "numpy>=1.24.0",
+    "sentence-transformers>=2.2.0",
+]
+all = [
+    "numpy>=1.24.0",
+    "sentence-transformers>=2.2.0",
 ]
 
 [project.scripts]
 context_aware = "context_aware.cli.main:main"
 
 [project.urls]
-"Homepage" = "https://github.com/yourusername/ContextAware"
-"Bug Tracker" = "https://github.com/yourusername/ContextAware/issues"
+"Homepage" = "https://github.com/FerdinandoBonsegna/ContextAware"
+"Bug Tracker" = "https://github.com/FerdinandoBonsegna/ContextAware/issues"
 
 [tool.setuptools.packages.find]
 include = ["context_aware*"]
